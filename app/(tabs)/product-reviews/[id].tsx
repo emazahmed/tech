@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -8,7 +8,8 @@ import {
   Image,
   StyleSheet,
   Alert,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -16,82 +17,41 @@ import { Star, ThumbsUp, ThumbsDown, Filter, ChevronDown, Camera, X } from 'luci
 import { useApp } from '@/context/AppContext';
 import Header from '@/components/Header';
 import Button from '@/components/Button';
-
-interface Review {
-  id: string;
-  userId: string;
-  userName: string;
-  userAvatar?: string;
-  rating: number;
-  title: string;
-  content: string;
-  date: string;
-  verified: boolean;
-  helpful: number;
-  notHelpful: number;
-  images?: string[];
-  userHasVoted?: 'helpful' | 'not-helpful' | null;
-}
+import LoadingSpinner from '@/components/LoadingSpinner';
+import { useReviews } from '@/hooks/useReviews';
+import { reviewService, Review, CreateReviewData } from '@/services/reviewService';
+import { authService } from '@/services/authService';
 
 interface ReviewForm {
-  rating: number;
+  rating: number | string;
   title: string;
   content: string;
   images: string[];
 }
 
-const mockReviews: Review[] = [
-  {
-    id: '1',
-    userId: 'user1',
-    userName: 'Sarah Johnson',
-    userAvatar: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&dpr=2',
-    rating: 5,
-    title: 'Absolutely love this phone!',
-    content: 'The camera quality is incredible and the battery life exceeds my expectations. The build quality feels premium and the performance is smooth. Highly recommend for anyone looking for a flagship device.',
-    date: '2024-01-15',
-    verified: true,
-    helpful: 24,
-    notHelpful: 2,
-    images: [
-      'https://images.pexels.com/photos/699122/pexels-photo-699122.jpeg?auto=compress&cs=tinysrgb&w=400',
-    ],
-  },
-  {
-    id: '2',
-    userId: 'user2',
-    userName: 'Mike Chen',
-    rating: 4,
-    title: 'Great phone with minor issues',
-    content: 'Overall very satisfied with the purchase. The display is beautiful and the performance is excellent. Only complaint is that it gets a bit warm during heavy gaming sessions.',
-    date: '2024-01-10',
-    verified: true,
-    helpful: 18,
-    notHelpful: 5,
-  },
-  {
-    id: '3',
-    userId: 'user3',
-    userName: 'Emily Davis',
-    userAvatar: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&dpr=2',
-    rating: 3,
-    title: 'Good but not great',
-    content: 'The phone is decent but I expected more for the price. The camera is good in daylight but struggles in low light conditions. Battery life is average.',
-    date: '2024-01-08',
-    verified: true,
-    helpful: 12,
-    notHelpful: 8,
-  },
-];
-
 export default function ProductReviewsScreen() {
   const { id } = useLocalSearchParams();
   const { state } = useApp();
-  const [reviews, setReviews] = useState<Review[]>(mockReviews);
+  const { 
+    reviews, 
+    stats, 
+    isLoading, 
+    isRefreshing, 
+    error, 
+    refresh, 
+    filterReviews 
+  } = useReviews({ 
+    productId: id as string,
+    pageSize: 20 
+  });
   const [showWriteReview, setShowWriteReview] = useState(false);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest' | 'lowest' | 'helpful'>('newest');
   const [filterRating, setFilterRating] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [canReview, setCanReview] = useState(false);
+  const [hasReviewed, setHasReviewed] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [reviewForm, setReviewForm] = useState<ReviewForm>({
     rating: 0,
     title: '',
@@ -101,41 +61,87 @@ export default function ProductReviewsScreen() {
   const [formErrors, setFormErrors] = useState<Partial<ReviewForm>>({});
 
   const product = state.products.find(p => p.id === id);
-  
-  // Check if user has purchased this product (mock check)
-  const hasPurchased = true; // In real app, check order history
-  const hasReviewed = reviews.some(r => r.userId === state.user?.id);
 
-  const filteredAndSortedReviews = useMemo(() => {
-    let filtered = reviews;
+  useEffect(() => {
+    checkReviewEligibility();
+  }, [id, state.user]);
+
+  useEffect(() => {
+    // Apply filters when sortBy or filterRating changes
+    const filters: any = {};
     
-    if (filterRating) {
-      filtered = filtered.filter(r => r.rating === filterRating);
+    // Convert sortBy to API format
+    switch (sortBy) {
+      case 'newest':
+        filters.sortBy = 'createdAt';
+        filters.sortOrder = 'desc';
+        break;
+      case 'oldest':
+        filters.sortBy = 'createdAt';
+        filters.sortOrder = 'asc';
+        break;
+      case 'highest':
+        filters.sortBy = 'rating';
+        filters.sortOrder = 'desc';
+        break;
+      case 'lowest':
+        filters.sortBy = 'rating';
+        filters.sortOrder = 'asc';
+        break;
+      case 'helpful':
+        filters.sortBy = 'helpful';
+        filters.sortOrder = 'desc';
+        break;
     }
     
-    return filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'newest':
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case 'oldest':
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        case 'highest':
-          return b.rating - a.rating;
-        case 'lowest':
-          return a.rating - b.rating;
-        case 'helpful':
-          return b.helpful - a.helpful;
-        default:
-          return 0;
+    if (filterRating) {
+      filters.rating = filterRating;
+    }
+    
+    filterReviews(filters);
+  }, [sortBy, filterRating]);
+
+  const checkReviewEligibility = async () => {
+    if (!state.user || !id) {
+      setIsAuthenticated(false);
+      setCanReview(false);
+      setHasReviewed(false);
+      return;
+    }
+
+    try {
+      const isAuth = await authService.isAuthenticated();
+      setIsAuthenticated(isAuth);
+      
+      if (isAuth) {
+        const response = await reviewService.canReviewProduct(id as string);
+        if (response.success && response.data) {
+          setCanReview(response.data.canReview || false);
+          setHasReviewed(!response.data.canReview && response.data.reason === 'already_reviewed');
+        }
       }
-    });
+    } catch (error) {
+      console.error('Error checking review eligibility:', error);
+    }
+  };
+
+  const handleAddPhoto = () => {
+    Alert.alert('Add Photo', 'Camera/Gallery functionality would be implemented here');
+  };
+
+  const filteredAndSortedReviews = useMemo(() => {
+    // Reviews are already filtered and sorted by the API
+    return reviews;
   }, [reviews, sortBy, filterRating]);
 
-  const averageRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  const averageRating = stats?.averageRating || 0;
+  const totalReviewsCount = stats?.totalReviews || 0;
   const ratingDistribution = [5, 4, 3, 2, 1].map(rating => ({
     rating,
-    count: reviews.filter(r => r.rating === rating).length,
-    percentage: (reviews.filter(r => r.rating === rating).length / reviews.length) * 100,
+    count: stats?.ratingDistribution?.[rating as keyof typeof stats.ratingDistribution] || 0,
+    percentage: totalReviewsCount > 0 
+      ? ((stats?.ratingDistribution?.[rating as keyof typeof stats.ratingDistribution] || 0) / totalReviewsCount) * 100 
+      : 0,
   }));
 
   const validateReviewForm = (): boolean => {
@@ -159,68 +165,175 @@ export default function ProductReviewsScreen() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmitReview = () => {
+  const handleSubmitReview = async () => {
     if (!validateReviewForm()) return;
-    
-    const newReview: Review = {
-      id: Date.now().toString(),
-      userId: state.user?.id || 'current-user',
-      userName: state.user?.name || 'Anonymous',
-      userAvatar: state.user?.avatar,
-      rating: reviewForm.rating,
-      title: reviewForm.title,
-      content: reviewForm.content,
-      date: new Date().toISOString().split('T')[0],
-      verified: hasPurchased,
-      helpful: 0,
-      notHelpful: 0,
-      images: reviewForm.images,
-    };
-    
-    setReviews(prev => [newReview, ...prev]);
-    setShowWriteReview(false);
-    setReviewForm({ rating: 0, title: '', content: '', images: [] });
-    Alert.alert('Success', 'Your review has been submitted!');
+
+    setIsSubmitting(true);
+
+    try {
+      const reviewData: CreateReviewData = {
+        productId: id as string,
+        rating: typeof reviewForm.rating === 'string' ? Number(reviewForm.rating) : reviewForm.rating,
+        title: reviewForm.title,
+        content: reviewForm.content,
+        images: reviewForm.images,
+      };
+
+      const response = await reviewService.createReview(reviewData);
+
+      if (response.success) {
+        setShowWriteReview(false);
+        setReviewForm({ rating: 0, title: '', content: '', images: [] });
+        setFormErrors({});
+        Alert.alert('Success', 'Your review has been submitted!');
+        
+        // Refresh reviews and check eligibility
+        await refresh();
+        await checkReviewEligibility();
+      } else {
+        if (response.errors && response.errors.length > 0) {
+          const fieldErrors: Partial<ReviewForm> = {};
+          response.errors.forEach(error => {
+            if (error.field === 'rating') fieldErrors.rating = error.message as any;
+            if (error.field === 'title') fieldErrors.title = error.message;
+            if (error.field === 'content') fieldErrors.content = error.message;
+          });
+          setFormErrors(fieldErrors);
+        } else {
+          Alert.alert('Error', response.message);
+        }
+      }
+    } catch (error) {
+      console.error('Submit review error:', error);
+      Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleVoteHelpful = (reviewId: string, isHelpful: boolean) => {
-    setReviews(prev => prev.map(review => {
-      if (review.id === reviewId) {
-        const currentVote = review.userHasVoted;
-        let helpful = review.helpful;
-        let notHelpful = review.notHelpful;
-        let newVote: 'helpful' | 'not-helpful' | null = null;
-        
-        // Remove previous vote if exists
-        if (currentVote === 'helpful') helpful--;
-        if (currentVote === 'not-helpful') notHelpful--;
-        
-        // Add new vote if different from current
-        if (currentVote !== (isHelpful ? 'helpful' : 'not-helpful')) {
-          if (isHelpful) {
-            helpful++;
-            newVote = 'helpful';
-          } else {
-            notHelpful++;
-            newVote = 'not-helpful';
-          }
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Login Required',
+        'Please login to vote on reviews.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => router.push('/(tabs)/auth/login') }
+        ]
+      );
+      return;
+    }
+
+    reviewService.voteOnReview(reviewId, isHelpful)
+      .then(response => {
+        if (response.success) {
+          // Refresh reviews to get updated vote counts
+          refresh();
+        } else {
+          Alert.alert('Error', response.message);
         }
-        
-        return {
-          ...review,
-          helpful,
-          notHelpful,
-          userHasVoted: newVote,
-        };
-      }
-      return review;
-    }));
+      })
+      .catch(error => {
+        console.error('Vote error:', error);
+        Alert.alert('Error', 'Failed to record vote');
+      });
   };
 
-  const handleAddPhoto = () => {
-    // In a real app, this would open camera/gallery
-    Alert.alert('Add Photo', 'Camera/Gallery functionality would be implemented here');
+  const handleWriteReviewPress = () => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Login Required',
+        'Please login to write a review.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => router.push('/(tabs)/auth/login') }
+        ]
+      );
+      return;
+    }
+
+    if (hasReviewed) {
+      Alert.alert(
+        'Already Reviewed',
+        'You have already reviewed this product. You can edit your existing review from your profile.',
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'View Profile', onPress: () => router.push('/(tabs)/profile') }
+        ]
+      );
+      return;
+    }
+
+    if (!canReview) {
+      Alert.alert(
+        'Cannot Review',
+        'You need to purchase this product before you can write a review.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setShowWriteReview(true);
   };
+
+  const handleCancelReview = () => {
+    setShowWriteReview(false);
+    setReviewForm({ rating: 0, title: '', content: '', images: [] });
+    setFormErrors({});
+  };
+
+  const handleFilterChange = (newSortBy: typeof sortBy) => {
+    setSortBy(newSortBy);
+  };
+
+  const handleRatingFilter = (rating: number) => {
+    setFilterRating(filterRating === rating ? null : rating);
+  };
+
+  if (!product) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Header
+          title="Reviews"
+          showBackButton
+          onBackPress={() => router.back()}
+        />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Product not found</Text>
+          <Button title="Go Back" onPress={() => router.back()} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isLoading && reviews.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Header
+          title="Reviews"
+          showBackButton
+          onBackPress={() => router.back()}
+        />
+        <LoadingSpinner />
+      </SafeAreaView>
+    );
+  }
+
+  if (error && reviews.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Header
+          title="Reviews"
+          showBackButton
+          onBackPress={() => router.back()}
+        />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Button title="Try Again" onPress={refresh} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const renderStarRating = (rating: number, size: number = 16, interactive: boolean = false) => {
     return (
@@ -247,7 +360,7 @@ export default function ProductReviewsScreen() {
       <View style={styles.averageRating}>
         <Text style={styles.averageNumber}>{averageRating.toFixed(1)}</Text>
         {renderStarRating(Math.round(averageRating), 20)}
-        <Text style={styles.totalReviews}>{reviews.length} reviews</Text>
+        <Text style={styles.totalReviews}>{totalReviewsCount} reviews</Text>
       </View>
       
       <View style={styles.distributionBars}>
@@ -255,7 +368,7 @@ export default function ProductReviewsScreen() {
           <TouchableOpacity
             key={rating}
             style={styles.distributionRow}
-            onPress={() => setFilterRating(filterRating === rating ? null : rating)}
+            onPress={() => handleRatingFilter(rating)}
           >
             <Text style={styles.ratingNumber}>{rating}</Text>
             <Star size={12} color="#FFC107" fill="#FFC107" />
@@ -292,7 +405,7 @@ export default function ProductReviewsScreen() {
               )}
             </View>
             <Text style={styles.reviewDate}>
-              {new Date(review.date).toLocaleDateString()}
+              {new Date(review.createdAt).toLocaleDateString()}
             </Text>
           </View>
         </View>
@@ -354,18 +467,14 @@ export default function ProductReviewsScreen() {
     </View>
   );
 
-  const renderWriteReviewForm = () => (
+   const renderWriteReviewForm = () => (
     <View style={styles.writeReviewForm}>
       <Text style={styles.formTitle}>Write a Review</Text>
-      
-      {/* Rating */}
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>Rating *</Text>
-        {renderStarRating(reviewForm.rating, 24, true)}
+        {renderStarRating(Number(reviewForm.rating), 24, true)}
         {formErrors.rating && <Text style={styles.errorText}>{formErrors.rating}</Text>}
       </View>
-      
-      {/* Title */}
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>Review Title *</Text>
         <TextInput
@@ -380,8 +489,6 @@ export default function ProductReviewsScreen() {
         />
         {formErrors.title && <Text style={styles.errorText}>{formErrors.title}</Text>}
       </View>
-      
-      {/* Content */}
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>Your Review * (minimum 20 characters)</Text>
         <TextInput
@@ -402,8 +509,6 @@ export default function ProductReviewsScreen() {
         </Text>
         {formErrors.content && <Text style={styles.errorText}>{formErrors.content}</Text>}
       </View>
-      
-      {/* Photo Upload */}
       <View style={styles.formGroup}>
         <Text style={styles.formLabel}>Add Photos (Optional)</Text>
         <TouchableOpacity style={styles.photoUpload} onPress={handleAddPhoto}>
@@ -411,34 +516,15 @@ export default function ProductReviewsScreen() {
           <Text style={styles.photoUploadText}>Add photos to your review</Text>
         </TouchableOpacity>
       </View>
-      
       <View style={styles.formActions}>
-        <Button
-          title="Cancel"
-          onPress={() => {
-            setShowWriteReview(false);
-            setReviewForm({ rating: 0, title: '', content: '', images: [] });
-            setFormErrors({});
-          }}
-          variant="outline"
-          
-        />
-        <Button
-          title="Submit Review"
-          onPress={handleSubmitReview}
-        />
+        <Button title="Cancel" onPress={handleCancelReview} variant="outline" />
+        <Button title="Submit Review" onPress={handleSubmitReview} loading={isSubmitting} />
       </View>
     </View>
   );
 
-  if (!product) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Text>Product not found</Text>
-      </SafeAreaView>
-    );
-  }
 
+  
   return (
     <SafeAreaView style={styles.container}>
       <Header
@@ -447,7 +533,17 @@ export default function ProductReviewsScreen() {
         onBackPress={() => router.back()}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            colors={['#2563EB']}
+            tintColor="#2563EB"
+          />
+        }
+      >
         {/* Product Info */}
         <View style={styles.productInfo}>
           <Image source={{ uri: product.image }} style={styles.productImage} />
@@ -458,7 +554,7 @@ export default function ProductReviewsScreen() {
         </View>
 
         {/* Rating Overview */}
-        {renderRatingDistribution()}
+        {totalReviewsCount > 0 && renderRatingDistribution()}
 
         {/* Controls */}
         <View style={styles.controls}>
@@ -473,10 +569,10 @@ export default function ProductReviewsScreen() {
             </TouchableOpacity>
           </View>
           
-          {hasPurchased && !hasReviewed && (
+          {canReview && !hasReviewed && (
             <Button
               title="Write Review"
-              onPress={() => setShowWriteReview(true)}
+              onPress={handleWriteReviewPress}
               size="small"
             />
           )}
@@ -500,7 +596,7 @@ export default function ProductReviewsScreen() {
                     styles.sortOption,
                     sortBy === key && styles.activeSortOption,
                   ]}
-                  onPress={() => setSortBy(key as any)}
+                  onPress={() => handleFilterChange(key as any)}
                 >
                   <Text style={[
                     styles.sortOptionText,
@@ -533,7 +629,29 @@ export default function ProductReviewsScreen() {
             {filteredAndSortedReviews.length} Review{filteredAndSortedReviews.length !== 1 ? 's' : ''}
             {filterRating && ` (${filterRating} star${filterRating !== 1 ? 's' : ''})`}
           </Text>
-          {filteredAndSortedReviews.map(renderReview)}
+          
+          {filteredAndSortedReviews.length === 0 ? (
+            <View style={styles.noReviewsContainer}>
+              <Text style={styles.noReviewsText}>
+                {filterRating ? 'No reviews found for this rating' : 'No reviews yet'}
+              </Text>
+              <Text style={styles.noReviewsSubtext}>
+                {filterRating 
+                  ? 'Try selecting a different rating filter' 
+                  : 'Be the first to review this product!'
+                }
+              </Text>
+              {!filterRating && canReview && !hasReviewed && (
+                <Button
+                  title="Write First Review"
+                  onPress={handleWriteReviewPress}
+                  size="large"
+                />
+              )}
+            </View>
+          ) : (
+            filteredAndSortedReviews.map(renderReview)
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -544,6 +662,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  errorText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   productInfo: {
     flexDirection: 'row',
@@ -754,12 +885,6 @@ const styles = StyleSheet.create({
   inputError: {
     borderColor: '#EF4444',
   },
-  errorText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#EF4444',
-    marginTop: 4,
-  },
   characterCount: {
     fontSize: 12,
     fontFamily: 'Inter-Regular',
@@ -800,6 +925,23 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#1E293B',
     marginBottom: 16,
+  },
+  noReviewsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noReviewsText: {
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  noReviewsSubtext: {
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   reviewCard: {
     backgroundColor: '#FFFFFF',
@@ -935,7 +1077,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginLeft: 4,
   },
-  activeVoteText: {
-    color: '#FFFFFF',
-  },
-});
+    activeVoteText: {
+      color: '#FFFFFF',
+    },
+  });

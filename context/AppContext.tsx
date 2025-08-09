@@ -288,10 +288,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (cachedProducts.length > 0) {
           dispatch({ type: 'SET_PRODUCTS', payload: cachedProducts });
           dispatch({ type: 'SET_PRODUCTS_ERROR', payload: 'Showing cached products. Pull to refresh for latest data.' });
-        } else {
-          // Use mock data as last resort
-          dispatch({ type: 'SET_PRODUCTS', payload: getMockProducts() });
-          dispatch({ type: 'SET_PRODUCTS_ERROR', payload: 'Using demo products. Connect to internet for real data.' });
         }
       }
     } catch (error) {
@@ -302,10 +298,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (cachedProducts.length > 0) {
         dispatch({ type: 'SET_PRODUCTS', payload: cachedProducts });
         dispatch({ type: 'SET_PRODUCTS_ERROR', payload: 'Network error. Showing cached products.' });
-      } else {
-        // Fallback to mock data
-        dispatch({ type: 'SET_PRODUCTS', payload: getMockProducts() });
-        dispatch({ type: 'SET_PRODUCTS_ERROR', payload: 'Network error. Using demo products.' });
       }
     } finally {
       dispatch({ type: 'SET_PRODUCTS_LOADING', payload: false });
@@ -341,37 +333,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_BRANDS', payload: ['Apple', 'Samsung', 'Sony', 'ASUS', 'Fitbit'] });
     }
   };
-
-  // Mock products as fallback
-  const getMockProducts = (): Product[] => [
-    {
-      id: '1',
-      name: 'iPhone 16 Pro Max',
-      price: 1199,
-      image: 'https://www.apple.com/newsroom/images/2024/09/apple-debuts-iphone-16-pro-and-iphone-16-pro-max/tile/Apple-iPhone-16-Pro-hero-240909-lp.jpg.news_app_ed.jpg',
-      category: 'Smartphones',
-      description: 'The iPhone 16 Pro Max redefines flagship performance with the all-new A18 Pro chip, a stunning 6.9" Super Retina XDR display, and a titanium body built for durability.',
-      rating: 4.5,
-      reviews: 324,
-      inStock: true,
-      brand: 'Apple',
-      images: ['https://www.apple.com/newsroom/images/2024/09/apple-debuts-iphone-16-pro-and-iphone-16-pro-max/tile/Apple-iPhone-16-Pro-hero-240909-lp.jpg.news_app_ed.jpg']
-    },
-    {
-      id: '2',
-      name: 'Samsung Galaxy S25',
-      price: 799,
-      image: 'https://diamu.com.bd/wp-content/uploads/2025/01/Samsung-Galaxy-S25.jpg',
-      category: 'Smartphones',
-      description: 'Meet the Galaxy S25 — Samsung\'s sleekest and smartest phone yet. Boasting a 6.8" AMOLED 2X display and Snapdragon Gen 4 processor.',
-      rating: 4.2,
-      reviews: 550,
-      inStock: true,
-      brand: 'Samsung',
-      images: ['https://diamu.com.bd/wp-content/uploads/2025/01/Samsung-Galaxy-S25.jpg']
-    },
-    // Add more mock products as needed...
-  ];
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>

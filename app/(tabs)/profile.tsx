@@ -200,7 +200,7 @@ export default function ProfileScreen() {
                   styles.verificationText,
                   { color: state.user.isEmailVerified ? '#10B981' : '#F59E0B' }
                 ]}>
-                  {state.user.isEmailVerified ? 'Email Verified' : 'Email Not Verified'}
+                  {state.user.isEmailVerified ? 'Email Verified' : 'Verified'}
                 </Text>
               </View>
             )}

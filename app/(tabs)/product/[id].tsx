@@ -177,7 +177,7 @@ export default function ProductDetailScreen() {
             <Text style={styles.brand}>{product.brand}</Text>
             <View style={styles.ratingContainer}>
               <Star size={16} color="#FFC107" fill="#FFC107" />
-              <Text style={styles.rating}>{product.rating}</Text>
+              <Text style={styles.rating}>{product.rating.toFixed(1)}</Text>
               <Text style={styles.reviews}>({product.reviews} reviews)</Text>
             </View>
           </View>

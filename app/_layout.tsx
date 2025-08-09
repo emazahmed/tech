@@ -6,6 +6,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AppProvider } from '@/context/AppContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { LogBox } from 'react-native';
+
 
 SplashScreen.preventAutoHideAsync();
 
@@ -40,4 +42,25 @@ export default function RootLayout() {
       </AppProvider>
     </ErrorBoundary>
   );
+    useEffect(() => {
+  LogBox.ignoreLogs(['The action \'POP_TO_TOP\' was not handled by any navigator']);
+  }, []);
+  useEffect(() => {
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    
+    console.warn = (...args) => {
+      if (args[0]?.includes?.('POP_TO_TOP')) {
+        return; // Suppress this specific warning
+      }
+      originalWarn(...args);
+    };
+    
+    console.error = (...args) => {
+      if (args[0]?.includes?.('POP_TO_TOP')) {
+        return; // Suppress this specific error
+      }
+      originalError(...args);
+    };
+  }, []);
 }

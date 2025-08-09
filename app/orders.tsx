@@ -212,7 +212,7 @@ export default function OrdersScreen() {
 
       <View style={styles.orderItems}>
         {item.items.slice(0, 2).map((orderItem, index) => (
-          <View key={orderItem.productId} style={styles.orderItemRow}>
+          <View key={`${item.id}-${orderItem.productId}-${index}`} style={styles.orderItemRow}>
             <Image source={{ uri: orderItem.image || 'https://images.pexels.com/photos/404280/pexels-photo-404280.jpeg?auto=compress&cs=tinysrgb&w=400' }} style={styles.itemImage} />
             <View style={styles.itemDetails}>
               <Text style={styles.itemName} numberOfLines={1}>{orderItem.name}</Text>
