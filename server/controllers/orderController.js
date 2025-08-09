@@ -3,6 +3,7 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Cart = require('../models/Cart');
 const { validationResult } = require('express-validator');
+
 const generateOrderNumber = () => {
   const timestamp = Date.now();
   const random = Math.floor(Math.random() * 10000);
@@ -43,7 +44,6 @@ const getOrders = async (req, res) => {
     if (status && status !== 'all') {
       query.status = status;
     }
-
 
     // Date range filter
     if (startDate || endDate) {
@@ -143,7 +143,6 @@ const getOrder = async (req, res) => {
   }
 };
 
-
 /**
  * @desc    Create new order from cart
  * @route   POST /api/orders
@@ -165,78 +164,152 @@ const createOrder = async (req, res) => {
       });
     }
 
-    const { shippingAddress, paymentInfo, notes, promoCode } = req.body;
+    const { shippingAddress, paymentInfo, notes, promoCode, items, pricing } = req.body;
 
-    // Get user's cart
-    const cartItems = await Cart.getUserCart(req.userId);
-    
-    // Filter out items where product no longer exists (same as cart controller)
-    const validCartItems = cartItems.filter(item => item.productId);
-    
-    if (!validCartItems || validCartItems.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Your cart is empty. Please add some items before checkout.'
-      });
-    }
+    console.log('Received order request:', {
+      items: items?.length || 0,
+      pricing: pricing,
+      shippingAddress: shippingAddress
+    });
 
-    // Verify all products are still available and in stock
-    const orderItems = [];
+    // ✅ OPTION 1: Use items from request body if provided
+    let orderItems = [];
     let subtotal = 0;
 
-    for (const cartItem of validCartItems) {
-      const product = cartItem.productId;
+    if (items && items.length > 0) {
+      console.log('Using items from request body');
       
-      if (!product || !product.isActive) {
+      // Verify all products still exist and are available
+      for (const item of items) {
+        const product = await Product.findById(item.productId);
+        
+        if (!product || !product.isActive) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${item.name || 'Unknown'} is no longer available`
+          });
+        }
+
+        if (!product.inStock) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${product.name} is out of stock`
+          });
+        }
+
+        // Check inventory
+        if (product.inventoryCount < item.quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Only ${product.inventoryCount} units of ${product.name} available`
+          });
+        }
+
+        const itemTotal = product.price * item.quantity;
+        subtotal += itemTotal;
+
+        orderItems.push({
+          productId: product._id,
+          name: product.name,
+          price: product.price,
+          quantity: item.quantity,
+          totalPrice: itemTotal,
+          variant: item.variant || {}
+        });
+      }
+    } else {
+      console.log('No items in request, falling back to cart from database');
+      
+      // ✅ FALLBACK: Use cart from database (original logic)
+      const cartItems = await Cart.getUserCart(req.userId);
+      
+      // Filter out items where product no longer exists
+      const validCartItems = cartItems.filter(item => item.productId);
+      
+      if (!validCartItems || validCartItems.length === 0) {
         return res.status(400).json({
           success: false,
-          message: `Product ${cartItem.productId?.name || 'Unknown'} is no longer available`
+          message: 'Your cart is empty. Please add some items before checkout.'
         });
       }
 
-      if (!product.inStock) {
-        return res.status(400).json({
-          success: false,
-          message: `Product ${product.name} is out of stock`
+      // Process cart items (original logic)
+      for (const cartItem of validCartItems) {
+        const product = cartItem.productId;
+        
+        if (!product || !product.isActive) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${cartItem.productId?.name || 'Unknown'} is no longer available`
+          });
+        }
+
+        if (!product.inStock) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${product.name} is out of stock`
+          });
+        }
+
+        if (product.inventoryCount < cartItem.quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Only ${product.inventoryCount} units of ${product.name} available`
+          });
+        }
+
+        const itemTotal = product.price * cartItem.quantity;
+        subtotal += itemTotal;
+
+        orderItems.push({
+          productId: product._id,
+          name: product.name,
+          price: product.price,
+          quantity: cartItem.quantity,
+          totalPrice: itemTotal,
+          variant: cartItem.variant
         });
       }
-
-      // Check inventory
-      if (product.inventoryCount < cartItem.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Only ${product.inventoryCount} units of ${product.name} available`
-        });
-      }
-
-      const itemTotal = product.price * cartItem.quantity;
-      subtotal += itemTotal;
-
-      orderItems.push({
-        productId: product._id,
-        name: product.name,
-        price: product.price,
-        quantity: cartItem.quantity,
-        totalPrice: itemTotal,
-        variant: cartItem.variant
-      });
     }
 
-    // Calculate pricing
-    const tax = subtotal * 0.08; // 8% tax
-    const shipping = subtotal > 100 ? 0 : 9.99; // Free shipping over $100
-    let discount = 0;
+    // ✅ Use pricing from request if provided, otherwise calculate
+    let finalPricing;
+    
+    if (pricing && pricing.total) {
+      console.log('Using pricing from request body');
+      finalPricing = {
+        subtotal: parseFloat(pricing.subtotal.toFixed(2)),
+        tax: parseFloat(pricing.tax.toFixed(2)),
+        shipping: parseFloat(pricing.shipping.toFixed(2)),
+        discount: parseFloat((pricing.discount || 0).toFixed(2)),
+        total: parseFloat(pricing.total.toFixed(2))
+      };
+    } else {
+      console.log('Calculating pricing on backend');
+      // Calculate pricing (original logic)
+      const tax = subtotal * 0.08; // 8% tax
+      const shipping = subtotal > 100 ? 0 : 9.99; // Free shipping over $100
+      let discount = 0;
 
-    // Apply promo code discount (simple implementation)
-    if (promoCode) {
-      if (promoCode === 'WELCOME20') {
-        discount = subtotal * 0.2; // 20% discount
-      } else if (promoCode === 'SAVE10') {
-        discount = subtotal * 0.1; // 10% discount
+      // Apply promo code discount
+      if (promoCode) {
+        if (promoCode === 'WELCOME20') {
+          discount = subtotal * 0.2; // 20% discount
+        } else if (promoCode === 'SAVE10') {
+          discount = subtotal * 0.1; // 10% discount
+        }
       }
-    }
 
-    const total = subtotal + tax + shipping - discount;
+      const total = subtotal + tax + shipping - discount;
+      
+      finalPricing = {
+        subtotal: parseFloat(subtotal.toFixed(2)),
+        tax: parseFloat(tax.toFixed(2)),
+        shipping: parseFloat(shipping.toFixed(2)),
+        discount: parseFloat(discount.toFixed(2)),
+        total: parseFloat(total.toFixed(2))
+      };
+    }
 
     // Get customer info
     const customer = await mongoose.model('User').findById(req.userId);
@@ -244,9 +317,9 @@ const createOrder = async (req, res) => {
     // Generate unique order number
     const orderNumber = generateOrderNumber();
 
-       // Create order
+    // Create order
     const order = await Order.create({
-      orderNumber, // Add this line
+      orderNumber,
       customerId: req.userId,
       customerInfo: {
         name: customer.name,
@@ -254,13 +327,7 @@ const createOrder = async (req, res) => {
         phone: customer.phone || shippingAddress.phone
       },
       items: orderItems,
-      pricing: {
-        subtotal: parseFloat(subtotal.toFixed(2)),
-        tax: parseFloat(tax.toFixed(2)),
-        shipping: parseFloat(shipping.toFixed(2)),
-        discount: parseFloat(discount.toFixed(2)),
-        total: parseFloat(total.toFixed(2))
-      },
+      pricing: finalPricing,
       shippingAddress,
       paymentInfo: {
         method: paymentInfo.method,
@@ -273,8 +340,11 @@ const createOrder = async (req, res) => {
     });
 
     // Update product inventory
-    for (const cartItem of cartItems) {
-      await cartItem.productId.updateStock(-cartItem.quantity);
+    for (const item of orderItems) {
+      const product = await Product.findById(item.productId);
+      if (product) {
+        await product.updateStock(-item.quantity);
+      }
     }
 
     // Clear user's cart
@@ -284,6 +354,8 @@ const createOrder = async (req, res) => {
     const populatedOrder = await Order.findById(order._id)
       .populate('customerId', 'name email')
       .populate('items.productId', 'name image brand');
+
+    console.log('Order created successfully:', order._id);
 
     res.status(201).json({
       success: true,

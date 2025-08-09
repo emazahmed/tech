@@ -257,59 +257,92 @@ export default function CheckoutScreen() {
     return digits;
   };
 
-  const handlePlaceOrder = async () => {
-    setIsProcessing(true);
+const handlePlaceOrder = async () => {
+  console.log('=== STARTING ORDER PLACEMENT ===');
+  setIsProcessing(true);
+  
+  try {
+    // Validate cart one more time before placing order
+    console.log('Step 1: Fetching cart from server...');
+    const cartResponse = await cartService.getCart();
     
-    try {
-      // Validate cart one more time before placing order
-      const cartResponse = await cartService.getCart();
-      
-      if (!cartResponse.success || !cartResponse.data?.cart || cartResponse.data.cart.length === 0) {
-        Alert.alert(
-          'Cart Empty', 
-          'Your cart is empty. Please add some items before checkout.',
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
-        return;
+    if (!cartResponse.success || !cartResponse.data?.cart || cartResponse.data.cart.length === 0) {
+      Alert.alert(
+        'Cart Empty', 
+        'Your cart is empty. Please add some items before checkout.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+      return;
+    }
+
+    console.log('✅ Cart validation PASSED');
+    console.log('Step 2: Preparing order data with cart items...');
+    
+    // Include cart items in the order data
+    const orderData = {
+      shippingAddress: {
+        name: `${formData.firstName} ${formData.lastName}`,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        country: 'United States',
+        phone: formData.phone,
+      },
+      paymentInfo: {
+        method: "credit_card" as "credit_card",
+        transactionId: `TXN-${Date.now()}`,
+        lastFour: formData.cardNumber.slice(-4),
+      },
+      notes: 'Order placed through mobile app',
+      // ✅ ADD CART ITEMS TO ORDER
+      items: cartResponse.data.cart.map(cartItem => ({
+        productId: cartItem.product._id || cartItem.product.id,
+        name: cartItem.product.name,
+        price: cartItem.priceAtAdd,
+        quantity: cartItem.quantity,
+        totalPrice: cartItem.totalPrice,
+        variant: cartItem.variant || {},
+        // Include additional product info that might be needed
+        image: cartItem.product.image,
+        brand: cartItem.product.brand,
+        sku: cartItem.product.sku,
+      })),
+      // Include pricing summary
+      pricing: {
+        subtotal: cartResponse.data.summary?.subtotal ?? 0,
+        tax: cartResponse.data.summary?.tax ?? 0,
+        shipping: cartResponse.data.summary?.shipping ?? 0,
+        total: cartResponse.data.summary?.total ?? 0,
+        itemCount: cartResponse.data.summary?.itemCount ?? 0,
       }
-
-      const orderData: CreateOrderData = {
-        shippingAddress: {
-          name: `${formData.firstName} ${formData.lastName}`,
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          zipCode: formData.zipCode,
-          country: 'United States',
-          phone: formData.phone,
-        },
-        paymentInfo: {
-          method: 'credit_card',
-          lastFour: formData.cardNumber.slice(-4),
-          transactionId: `TXN-${Date.now()}`,
-        },
-        notes: 'Order placed through mobile app',
-      };
-
-      const response = await orderService.createOrder(orderData);
+    };
+    
+    console.log('Order data prepared:', JSON.stringify(orderData, null, 2));
+    console.log('Step 3: Calling orderService.createOrder...');
+    
+    const response = await orderService.createOrder(orderData);
+    console.log('Order service response:', JSON.stringify(response, null, 2));
+    
+    if (response.success && response.data?.order) {
+      console.log('✅ Order created successfully');
       
-      if (response.success && response.data?.order) {
-        // Clear cart and add order to local state
-        dispatch({ type: 'ADD_ORDER', payload: {
-          id: response.data.order.id,
-          date: response.data.order.createdAt,
-          total: response.data.order.pricing.total,
-          status: (['pending', 'processing', 'shipped', 'delivered'] as const).includes(response.data.order.status as any)
-            ? response.data.order.status as 'pending' | 'processing' | 'shipped' | 'delivered'
-            : 'pending',
-          items: state.cart,
-        }});
-        
+      // Clear cart and add order to local state
+      dispatch({ type: 'ADD_ORDER', payload: {
+        id: response.data.order.id,
+        date: response.data.order.createdAt,
+        total: response.data.order.pricing.total,
+        status: (['pending', 'processing', 'shipped', 'delivered'] as const).includes(response.data.order.status as any)
+          ? response.data.order.status as 'pending' | 'processing' | 'shipped' | 'delivered'
+          : 'pending',
+        items: state.cart,
+      }});
+      
       dispatch({ type: 'CLEAR_CART' });
       
       Alert.alert(
         'Order Placed Successfully!',
-          `Your order #${response.data.order.orderNumber} has been placed and will be processed shortly.`,
+        `Your order #${response.data.order.orderNumber} has been placed and will be processed shortly.`,
         [
           {
             text: 'Continue Shopping',
@@ -320,16 +353,18 @@ export default function CheckoutScreen() {
           },
         ]
       );
-      } else {
-        Alert.alert('Order Failed', response.message || 'Failed to place order. Please try again.');
-      }
-    } catch (error) {
-      console.error('Order placement error:', error);
-      Alert.alert('Error', 'Network error. Please check your connection and try again.');
-    } finally {
-      setIsProcessing(false);
+    } else {
+      console.log('❌ Order creation failed');
+      Alert.alert('Order Failed', response.message || 'Failed to place order. Please try again.');
     }
-  };
+  } catch (error) {
+    console.error('❌ Order placement error:', error);
+    Alert.alert('Error', 'Network error. Please check your connection and try again.');
+  } finally {
+    console.log('=== ORDER PLACEMENT COMPLETED ===');
+    setIsProcessing(false);
+  }
+};
 
   const renderPersonalInfo = () => (
     <View style={styles.stepContainer}>

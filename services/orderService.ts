@@ -115,6 +115,29 @@ export interface CreateOrderData {
   };
   notes?: string;
   promoCode?: string;
+  // ✅ ADD THESE FIELDS
+  items: Array<{
+    productId: string;
+    name: string;
+    price: number;
+    quantity: number;
+    totalPrice: number;
+    variant?: {
+      size?: string;
+      color?: string;
+      model?: string;
+    };
+    image?: string;
+    brand?: string;
+    sku?: string;
+  }>;
+  pricing?: {
+    subtotal: number;
+    tax: number;
+    shipping: number;
+    total: number;
+    itemCount: number;
+  };
 }
 
 export interface OrderFilters {

@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 const API_BASE_URL = Platform.OS === 'web' 
   ? 'http://localhost:5020/api' 
   : 'http://192.168.0.174:5020/api';export interface Product {
+  _id: string;
   id: string;
   name: string;
   price: number;

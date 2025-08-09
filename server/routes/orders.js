@@ -1,5 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
+const { requireAuth } = require('../middleware/session'); // Import the auth middleware
 const {
   getOrders,
   getOrder,
@@ -13,7 +14,6 @@ const {
 } = require('../controllers/orderController');
 
 const router = express.Router();
-
 /**
  * Validation rules for order creation
  */
@@ -132,14 +132,14 @@ const bulkStatusUpdateValidation = [
 ];
 
 // Order routes
-router.get('/', getOrders);
-router.get('/stats', getOrderStats);
-router.get('/recent', getRecentOrders);
-router.get('/customer/:customerId', getCustomerOrders);
-router.get('/:id', getOrder);
-router.post('/', createOrderValidation, createOrder);
-router.put('/:id/status', statusUpdateValidation, updateOrderStatus);
-router.put('/bulk-status', bulkStatusUpdateValidation, bulkUpdateStatus);
-router.delete('/:id', cancelOrder);
+router.get('/', requireAuth, getOrders); // Assuming admin only
+router.get('/stats', requireAuth, getOrderStats); // Assuming admin only
+router.get('/recent', requireAuth, getRecentOrders); // Assuming admin only
+router.get('/customer/:customerId', requireAuth, getCustomerOrders);
+router.get('/:id', requireAuth, getOrder);
+router.post('/', requireAuth, createOrderValidation, createOrder); // This is the important one!
+router.put('/:id/status', requireAuth, statusUpdateValidation, updateOrderStatus);
+router.put('/bulk-status', requireAuth, bulkStatusUpdateValidation, bulkUpdateStatus);
+router.delete('/:id', requireAuth, cancelOrder);
 
 module.exports = router;

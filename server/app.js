@@ -103,6 +103,7 @@ app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const dbStatus = database.getConnectionStatus();
