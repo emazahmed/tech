@@ -258,12 +258,10 @@ export default function CheckoutScreen() {
   };
 
 const handlePlaceOrder = async () => {
-  console.log('=== STARTING ORDER PLACEMENT ===');
   setIsProcessing(true);
   
   try {
     // Validate cart one more time before placing order
-    console.log('Step 1: Fetching cart from server...');
     const cartResponse = await cartService.getCart();
     
     if (!cartResponse.success || !cartResponse.data?.cart || cartResponse.data.cart.length === 0) {
@@ -274,9 +272,6 @@ const handlePlaceOrder = async () => {
       );
       return;
     }
-
-    console.log('✅ Cart validation PASSED');
-    console.log('Step 2: Preparing order data with cart items...');
     
     // Include cart items in the order data
     const orderData = {
@@ -295,7 +290,6 @@ const handlePlaceOrder = async () => {
         lastFour: formData.cardNumber.slice(-4),
       },
       notes: 'Order placed through mobile app',
-      // ✅ ADD CART ITEMS TO ORDER
       items: cartResponse.data.cart.map(cartItem => ({
         productId: cartItem.product._id || cartItem.product.id,
         name: cartItem.product.name,
@@ -303,12 +297,10 @@ const handlePlaceOrder = async () => {
         quantity: cartItem.quantity,
         totalPrice: cartItem.totalPrice,
         variant: cartItem.variant || {},
-        // Include additional product info that might be needed
         image: cartItem.product.image,
         brand: cartItem.product.brand,
         sku: cartItem.product.sku,
       })),
-      // Include pricing summary
       pricing: {
         subtotal: cartResponse.data.summary?.subtotal ?? 0,
         tax: cartResponse.data.summary?.tax ?? 0,
@@ -318,15 +310,9 @@ const handlePlaceOrder = async () => {
       }
     };
     
-    console.log('Order data prepared:', JSON.stringify(orderData, null, 2));
-    console.log('Step 3: Calling orderService.createOrder...');
-    
     const response = await orderService.createOrder(orderData);
-    console.log('Order service response:', JSON.stringify(response, null, 2));
     
     if (response.success && response.data?.order) {
-      console.log('✅ Order created successfully');
-      
       // Clear cart and add order to local state
       dispatch({ type: 'ADD_ORDER', payload: {
         id: response.data.order.id,
@@ -354,14 +340,11 @@ const handlePlaceOrder = async () => {
         ]
       );
     } else {
-      console.log('❌ Order creation failed');
       Alert.alert('Order Failed', response.message || 'Failed to place order. Please try again.');
     }
   } catch (error) {
-    console.error('❌ Order placement error:', error);
     Alert.alert('Error', 'Network error. Please check your connection and try again.');
   } finally {
-    console.log('=== ORDER PLACEMENT COMPLETED ===');
     setIsProcessing(false);
   }
 };
@@ -585,29 +568,6 @@ const handlePlaceOrder = async () => {
         />
         {errors.cardName && <Text style={styles.errorText}>{errors.cardName}</Text>}
       </View>
-
-      {/* Order Summary */}
-      <View style={styles.orderSummary}>
-        <Text style={styles.summaryTitle}>Order Summary</Text>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Subtotal</Text>
-          <Text style={styles.summaryValue}>${cartTotal.toFixed(2)}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Tax</Text>
-          <Text style={styles.summaryValue}>${tax.toFixed(2)}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Shipping</Text>
-          <Text style={styles.summaryValue}>
-            {shipping === 0 ? 'Free' : `$${shipping.toFixed(2)}`}
-          </Text>
-        </View>
-        <View style={[styles.summaryRow, styles.totalRow]}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>${finalTotal.toFixed(2)}</Text>
-        </View>
-      </View>
     </View>
   );
 
@@ -813,14 +773,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#EF4444',
     marginTop: 4,
-  },
-  orderSummary: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
   summaryTitle: {
     fontSize: 16,

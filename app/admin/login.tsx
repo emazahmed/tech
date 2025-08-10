@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, EyeOff, Shield, Lock } from 'lucide-react-native';
+import { Eye, EyeOff, Shield, Lock, ArrowLeft } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Button from '@/components/Button';
 
@@ -68,6 +68,11 @@ export default function AdminLoginScreen() {
     }
   };
 
+  const handleBackPress = () => {
+    router.back(); // This will go back to the previous screen (user login)
+    // Alternative: router.replace('/login') if you want to navigate to a specific route
+  };
+
   const clearError = (field: 'email' | 'password') => {
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: undefined }));
@@ -80,6 +85,17 @@ export default function AdminLoginScreen() {
         style={styles.content}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        {/* Back Button */}
+        <View style={styles.backButtonContainer}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={handleBackPress}
+          >
+            <ArrowLeft size={24} color="#374151" />
+            <Text style={styles.backButtonText}>Back to Login</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <Shield size={48} color="#2563EB" />
@@ -159,9 +175,25 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
+  backButtonContainer: {
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#374151',
+    marginLeft: 8,
+  },
   header: {
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 40,
     paddingBottom: 40,
   },
   iconContainer: {
