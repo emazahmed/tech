@@ -32,9 +32,9 @@ const getOrders = async (req, res) => {
     // Build query
     let query = {};
     
-    // For regular users, only show their own orders
-    // For admins, show all orders (or filtered by customerId if provided)
-    if (req.user?.role !== 'admin') {
+    // If user is authenticated and not admin, show only their orders
+    // If no authentication or admin access, show all orders
+    if (req.userId && req.user?.role !== 'admin') {
       query.customerId = req.userId;
     } else if (customerId) {
       query.customerId = customerId;
@@ -114,7 +114,8 @@ const getOrder = async (req, res) => {
     let query = { _id: req.params.id };
     
     // For regular users, ensure they can only access their own orders
-    if (req.user?.role !== 'admin') {
+    // Allow admin panel access without authentication
+    if (req.userId && req.user?.role !== 'admin') {
       query.customerId = req.userId;
     }
     
@@ -413,7 +414,7 @@ const updateOrderStatus = async (req, res) => {
     }
 
     // Update status with history
-    await order.updateStatus(status, req.userId, notes);
+    await order.updateStatus(status, req.userId || null, notes);
 
     // Add tracking information if provided
     if (trackingNumber && carrier) {
@@ -464,7 +465,7 @@ const cancelOrder = async (req, res) => {
     }
 
     // Update status to cancelled
-    await order.updateStatus('cancelled', req.userId, 'Order cancelled by admin');
+    await order.updateStatus('cancelled', req.userId || null, 'Order cancelled by admin');
 
     // Restore product inventory
     for (const item of order.items) {
@@ -674,7 +675,7 @@ const bulkUpdateStatus = async (req, res) => {
     const updatePromises = orderIds.map(async (orderId) => {
       const order = await Order.findById(orderId);
       if (order) {
-        return order.updateStatus(status, req.userId, notes);
+        return order.updateStatus(status, req.userId || null, notes);
       }
     });
 

@@ -65,6 +65,14 @@ const optionalAuth = (req, res, next) => {
     req.userId = req.session.userId;
     req.userEmail = req.session.userEmail;
     req.userName = req.session.userName;
+    
+    // Also add user object for role checking
+    req.user = {
+      id: req.session.userId,
+      email: req.session.userEmail,
+      name: req.session.userName,
+      role: req.session.userRole || 'user'
+    };
   }
   
   next();

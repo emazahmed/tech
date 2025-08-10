@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Eye, EyeOff, Shield, Lock, ArrowLeft } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Button from '@/components/Button';
 
 export default function AdminLoginScreen() {
@@ -47,22 +46,13 @@ export default function AdminLoginScreen() {
     try {
       // Hardcoded admin credentials check
       if (credentials.email === 'admin@onetech.com' && credentials.password === 'One@Admin') {
-        // Create admin session for the frontend
-        const adminSession = {
-          id: 'admin-1',
-          email: credentials.email,
-          role: 'admin',
-          loginTime: new Date().toISOString(),
-        };
-
-        await AsyncStorage.setItem('adminSession', JSON.stringify(adminSession));
         router.replace('/admin/dashboard');
       } else {
         Alert.alert('Invalid Credentials', 'Please check your email and password');
       }
     } catch (error) {
       console.error('Admin login error:', error);
-      Alert.alert('Error', 'Failed to save session');
+      Alert.alert('Error', 'Login failed');
     } finally {
       setIsLoading(false);
     }

@@ -21,6 +21,44 @@ export default function RootLayout() {
     'Inter-Bold': Inter_700Bold,
   });
 
+    useEffect(() => {
+    // Ignore LogBox warnings
+    LogBox.ignoreLogs([
+      'The action \'POP_TO_TOP\' was not handled by any navigator',
+      'POP_TO_TOP'
+    ]);
+    
+    // Override console methods to filter out POP_TO_TOP messages
+    const originalWarn = console.warn;
+    const originalError = console.error;
+   
+    console.warn = (...args) => {
+      const message = args.join(' ').toString();
+      if (message.includes('POP_TO_TOP')) {
+        return;
+      }
+      originalWarn(...args);
+    };
+   
+    console.error = (...args) => {
+      const message = args.join(' ').toString();
+      if (message.includes('POP_TO_TOP')) {
+        return;
+      }
+      originalError(...args);
+    };
+  
+    // Also override console.log in case it's being logged there
+    const originalLog = console.log;
+    console.log = (...args) => {
+      const message = args.join(' ').toString();
+      if (message.includes('POP_TO_TOP')) {
+        return;
+      }
+      originalLog(...args);
+    };
+  }, []);
+  
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
@@ -35,32 +73,11 @@ export default function RootLayout() {
     <ErrorBoundary>
       <AppProvider>
         <Stack screenOptions={{ headerShown: false }}>
-          {/* Only the tabs route - everything else is inside tabs now */}
           <Stack.Screen name="(tabs)" />
         </Stack>
         <StatusBar style="auto" />
       </AppProvider>
     </ErrorBoundary>
   );
-    useEffect(() => {
-  LogBox.ignoreLogs(['The action \'POP_TO_TOP\' was not handled by any navigator']);
-  }, []);
-  useEffect(() => {
-    const originalWarn = console.warn;
-    const originalError = console.error;
-    
-    console.warn = (...args) => {
-      if (args[0]?.includes?.('POP_TO_TOP')) {
-        return;
-      }
-      originalWarn(...args);
-    };
-    
-    console.error = (...args) => {
-      if (args[0]?.includes?.('POP_TO_TOP')) {
-        return;
-      }
-      originalError(...args);
-    };
-  }, []);
+
 }

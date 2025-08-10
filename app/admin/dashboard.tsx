@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Package, ShoppingCart, Plus, LogOut, TrendingUp, Users, DollarSign, Calendar } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { orderService } from '@/services/orderService';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
@@ -54,7 +53,6 @@ export default function AdminDashboardScreen() {
 
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('adminSession');
       router.replace('/admin/login');
     } catch (error) {
       console.error('Error logging out:', error);

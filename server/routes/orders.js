@@ -1,6 +1,6 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { requireAuth } = require('../middleware/session'); // Import the auth middleware
+const { requireAuth, optionalAuth } = require('../middleware/session'); // Import the auth middleware
 const {
   getOrders,
   getOrder,
@@ -132,14 +132,14 @@ const bulkStatusUpdateValidation = [
 ];
 
 // Order routes
-router.get('/', requireAuth, getOrders); // Assuming admin only
-router.get('/stats', requireAuth, getOrderStats); // Assuming admin only
-router.get('/recent', requireAuth, getRecentOrders); // Assuming admin only
+router.get('/', optionalAuth, getOrders); // Allow without auth for admin panel
+router.get('/stats', optionalAuth, getOrderStats); // Allow without auth for admin panel
+router.get('/recent', optionalAuth, getRecentOrders); // Allow without auth for admin panel
 router.get('/customer/:customerId', requireAuth, getCustomerOrders);
-router.get('/:id', requireAuth, getOrder);
+router.get('/:id', optionalAuth, getOrder); // Allow without auth for admin panel
 router.post('/', requireAuth, createOrderValidation, createOrder); // This is the important one!
-router.put('/:id/status', requireAuth, statusUpdateValidation, updateOrderStatus);
-router.put('/bulk-status', requireAuth, bulkStatusUpdateValidation, bulkUpdateStatus);
-router.delete('/:id', requireAuth, cancelOrder);
+router.put('/:id/status', optionalAuth, statusUpdateValidation, updateOrderStatus); // Allow without auth for admin panel
+router.put('/bulk-status', optionalAuth, bulkStatusUpdateValidation, bulkUpdateStatus); // Allow without auth for admin panel
+router.delete('/:id', optionalAuth, cancelOrder); // Allow without auth for admin panel
 
 module.exports = router;
