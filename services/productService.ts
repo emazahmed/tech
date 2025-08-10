@@ -4,7 +4,9 @@ import { Platform } from 'react-native';
 // Use localhost for web, IP address for mobile
 const API_BASE_URL = Platform.OS === 'web' 
   ? 'http://localhost:5020/api' 
-  : 'http://192.168.0.174:5020/api';export interface Product {
+  : 'http://192.168.0.174:5020/api';
+
+export interface Product {
   _id: string;
   id: string;
   name: string;
@@ -26,7 +28,8 @@ const API_BASE_URL = Platform.OS === 'web'
 
 export interface ProductResponse {
   success: boolean;
-  message: string;
+  message?: string;
+  total?: number;
   data?: {
     products?: Product[];
     product?: Product;
@@ -64,7 +67,7 @@ export interface CreateProductData {
   sku: string;
   inventoryCount: number;
   inStock: boolean;
-  image: string; // Primary image
+  image: string;
   images: string[];
 }
 
@@ -80,51 +83,106 @@ class ProductService {
     
     Object.entries(filters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
-        params.append(key, value.toString());
+        if (key === 'search' && typeof value === 'string') {
+          const trimmedSearch = value.trim();
+          if (trimmedSearch) {
+            params.append(key, trimmedSearch);
+          }
+        } else {
+          params.append(key, value.toString());
+        }
       }
     });
 
     return params.toString();
   }
 
-  /**
-   * Fetch all products with optional filtering and pagination
-   */
-  async getProducts(filters: ProductFilters = {}): Promise<ProductResponse> {
+  async getProducts(filters: ProductFilters = {}, options?: { signal?: AbortSignal }): Promise<ProductResponse> {
     try {
       const queryString = this.buildQueryString(filters);
       const url = `${API_BASE_URL}/products${queryString ? `?${queryString}` : ''}`;
       
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const shouldCreateTimeout = !options?.signal;
+      const controller = shouldCreateTimeout ? new AbortController() : null;
+      
+      if (shouldCreateTimeout && controller) {
+        timeoutId = setTimeout(() => controller.abort(), 10000);
+      }
+
       const response = await fetch(url, {
         method: 'GET',
-        headers: await this.getHeaders(),
+        headers: this.getHeaders(),
+        signal: options?.signal || controller?.signal,
       });
 
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return {
+            success: false,
+            message: 'Products endpoint not found',
+            data: { products: [], total: 0 },
+            total: 0
+          };
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const data: ProductResponse = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Get products error:', error);
+      
+      const normalizedData: ProductResponse = {
+        ...data,
+        total: data.data?.total || data.total || 0,
+        data: {
+          ...data.data,
+          products: data.data?.products || [],
+          total: data.data?.total || data.total || 0,
+        }
+      };
+
+      return normalizedData;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw error;
+      }
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        return {
+          success: false,
+          message: 'Unable to connect to server. Please check your internet connection.',
+          data: { products: [], total: 0 },
+          total: 0
+        };
+      }
+      
       return {
         success: false,
-        message: 'Network error. Please check your connection and try again.',
+        message: error.message || 'Network error. Please check your connection and try again.',
+        data: { products: [], total: 0 },
+        total: 0
       };
     }
   }
 
-  /**
-   * Fetch a single product by ID
-   */
   async getProduct(id: string): Promise<ProductResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/products/${id}`, {
+      const url = `${API_BASE_URL}/products/${id}`;
+      const response = await fetch(url, {
         method: 'GET',
-        headers: await this.getHeaders(),
+        headers: this.getHeaders(),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data: ProductResponse = await response.json();
       return data;
-    } catch (error) {
-      console.error('Get product error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -132,23 +190,14 @@ class ProductService {
     }
   }
 
-  /**
-   * Search products by query
-   */
   async searchProducts(query: string, filters: Omit<ProductFilters, 'search'> = {}): Promise<ProductResponse> {
-    return this.getProducts({ ...filters, search: query });
+    return this.getProducts({ ...filters, search: query.trim() });
   }
 
-  /**
-   * Get products by category
-   */
   async getProductsByCategory(category: string, filters: Omit<ProductFilters, 'category'> = {}): Promise<ProductResponse> {
     return this.getProducts({ ...filters, category });
   }
 
-  /**
-   * Get featured products
-   */
   async getFeaturedProducts(limit: number = 10): Promise<ProductResponse> {
     return this.getProducts({ 
       sortBy: 'rating', 
@@ -158,20 +207,20 @@ class ProductService {
     });
   }
 
-  /**
-   * Get product categories
-   */
   async getCategories(): Promise<{ success: boolean; data?: string[]; message: string }> {
     try {
       const response = await fetch(`${API_BASE_URL}/products/categories`, {
         method: 'GET',
-        headers: await this.getHeaders(),
+        headers: this.getHeaders(),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       return data;
-    } catch (error) {
-      console.error('Get categories error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -179,20 +228,20 @@ class ProductService {
     }
   }
 
-  /**
-   * Get product brands
-   */
   async getBrands(): Promise<{ success: boolean; data?: string[]; message: string }> {
     try {
       const response = await fetch(`${API_BASE_URL}/products/brands`, {
         method: 'GET',
-        headers: await this.getHeaders(),
+        headers: this.getHeaders(),
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
 
       const data = await response.json();
       return data;
-    } catch (error) {
-      console.error('Get brands error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -200,11 +249,6 @@ class ProductService {
     }
   }
 
-  // Admin functions (require authentication)
-
-  /**
-   * Create a new product (Admin only)
-   */
   async createProduct(productData: CreateProductData): Promise<ProductResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/products`, {
@@ -215,8 +259,7 @@ class ProductService {
 
       const data: ProductResponse = await response.json();
       return data;
-    } catch (error) {
-      console.error('Create product error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -224,9 +267,6 @@ class ProductService {
     }
   }
 
-  /**
-   * Update an existing product (Admin only)
-   */
   async updateProduct(id: string, productData: Partial<CreateProductData>): Promise<ProductResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/products/${id}`, {
@@ -237,8 +277,7 @@ class ProductService {
 
       const data: ProductResponse = await response.json();
       return data;
-    } catch (error) {
-      console.error('Update product error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -246,9 +285,6 @@ class ProductService {
     }
   }
 
-  /**
-   * Delete a product (Admin only)
-   */
   async deleteProduct(id: string): Promise<ProductResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/products/${id}`, {
@@ -258,8 +294,7 @@ class ProductService {
 
       const data: ProductResponse = await response.json();
       return data;
-    } catch (error) {
-      console.error('Delete product error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -267,9 +302,6 @@ class ProductService {
     }
   }
 
-  /**
-   * Toggle product stock status (Admin only)
-   */
   async toggleProductStock(id: string, inStock: boolean): Promise<ProductResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/products/${id}/stock`, {
@@ -280,8 +312,7 @@ class ProductService {
 
       const data: ProductResponse = await response.json();
       return data;
-    } catch (error) {
-      console.error('Toggle product stock error:', error);
+    } catch {
       return {
         success: false,
         message: 'Network error. Please check your connection and try again.',
@@ -289,21 +320,13 @@ class ProductService {
     }
   }
 
-  /**
-   * Cache products locally for offline access
-   */
   async cacheProducts(products: Product[]): Promise<void> {
     try {
       await AsyncStorage.setItem('cachedProducts', JSON.stringify(products));
       await AsyncStorage.setItem('productsCacheTime', Date.now().toString());
-    } catch (error) {
-      console.error('Error caching products:', error);
-    }
+    } catch {}
   }
 
-  /**
-   * Get cached products for offline access
-   */
   async getCachedProducts(): Promise<Product[]> {
     try {
       const cachedProducts = await AsyncStorage.getItem('cachedProducts');
@@ -313,28 +336,46 @@ class ProductService {
         const timeDiff = Date.now() - parseInt(cacheTime);
         const oneHour = 60 * 60 * 1000;
         
-        // Return cached data if less than 1 hour old
         if (timeDiff < oneHour) {
           return JSON.parse(cachedProducts);
         }
       }
       
       return [];
-    } catch (error) {
-      console.error('Error getting cached products:', error);
+    } catch {
       return [];
     }
   }
 
-  /**
-   * Clear product cache
-   */
   async clearCache(): Promise<void> {
     try {
       await AsyncStorage.removeItem('cachedProducts');
       await AsyncStorage.removeItem('productsCacheTime');
-    } catch (error) {
-      console.error('Error clearing product cache:', error);
+    } catch {}
+  }
+
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/products?limit=1`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      return {
+        success: true,
+        message: `Connected successfully. API returned ${data.data?.products?.length || 0} products.`
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: `Connection failed: ${error.message}`
+      };
     }
   }
 }

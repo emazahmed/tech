@@ -25,66 +25,40 @@ const getProducts = async (req, res) => {
     // Build query
     let query = { isActive: true };
 
-    // Category filter
-    if (category) {
-      query.category = category;
-    }
+    if (category) query.category = category;
+    if (brand) query.brand = brand;
 
-    // Brand filter
-    if (brand) {
-      query.brand = brand;
-    }
-
-    // Price range filter
     if (minPrice || maxPrice) {
       query.price = {};
       if (minPrice) query.price.$gte = Number(minPrice);
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
 
-    // Stock filter
-    if (inStock !== undefined) {
-      query.inStock = inStock === 'true';
+    if (inStock !== undefined) query.inStock = inStock === 'true';
+    if (featured === 'true') query.isFeatured = true;
+
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      query.$or = [
+        { name: { $regex: searchTerm, $options: 'i' } },
+        { description: { $regex: searchTerm, $options: 'i' } },
+        { brand: { $regex: searchTerm, $options: 'i' } },
+        { category: { $regex: searchTerm, $options: 'i' } },
+        { sku: { $regex: searchTerm, $options: 'i' } }
+      ];
     }
 
-    // Featured filter
-    if (featured === 'true') {
-      query.isFeatured = true;
-    }
+    const sortObj = {};
+    sortObj[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    // Search functionality
-    let products;
-    if (search) {
-      products = await Product.searchProducts(search);
-      // Apply additional filters to search results
-      products = products.filter(product => {
-        let matches = true;
-        if (category && product.category !== category) matches = false;
-        if (brand && product.brand !== brand) matches = false;
-        if (minPrice && product.price < Number(minPrice)) matches = false;
-        if (maxPrice && product.price > Number(maxPrice)) matches = false;
-        if (inStock !== undefined && product.inStock !== (inStock === 'true')) matches = false;
-        return matches;
-      });
-    } else {
-      // Build sort object
-      const sortObj = {};
-      sortObj[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    const skip = (Number(page) - 1) * Number(limit);
 
-      // Pagination
-      const skip = (Number(page) - 1) * Number(limit);
+    const products = await Product.find(query)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(Number(limit));
 
-      products = await Product.find(query)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(Number(limit));
-    }
-
-    // Get total count for pagination
-    const total = search 
-      ? products.length 
-      : await Product.countDocuments(query);
-
+    const total = await Product.countDocuments(query);
     const totalPages = Math.ceil(total / Number(limit));
 
     res.status(200).json({
@@ -95,11 +69,12 @@ const getProducts = async (req, res) => {
         total,
         page: Number(page),
         limit: Number(limit),
-        totalPages
+        totalPages,
+        hasProducts: products.length > 0,
+        message: products.length === 0 ? 'No products found' : undefined
       }
     });
   } catch (error) {
-    console.error('Get products error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching products'
@@ -107,11 +82,6 @@ const getProducts = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get single product
- * @route   GET /api/products/:id
- * @access  Public
- */
 const getProduct = async (req, res) => {
   try {
     const product = await Product.findOne({
@@ -131,7 +101,6 @@ const getProduct = async (req, res) => {
       data: { product }
     });
   } catch (error) {
-    console.error('Get product error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching product'
@@ -139,14 +108,8 @@ const getProduct = async (req, res) => {
   }
 };
 
-/**
- * @desc    Create new product
- * @route   POST /api/products
- * @access  Private (Admin only)
- */
 const createProduct = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -160,11 +123,7 @@ const createProduct = async (req, res) => {
       });
     }
 
-    const productData = {
-      ...req.body
-    };
-
-    // Add user info if available
+    const productData = { ...req.body };
     if (req.user?.id) {
       productData.createdBy = req.user.id;
       productData.updatedBy = req.user.id;
@@ -178,9 +137,6 @@ const createProduct = async (req, res) => {
       data: { product }
     });
   } catch (error) {
-    console.error('Create product error:', error);
-    
-    // Handle duplicate SKU error
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
@@ -188,7 +144,6 @@ const createProduct = async (req, res) => {
       });
     }
 
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -205,14 +160,8 @@ const createProduct = async (req, res) => {
   }
 };
 
-/**
- * @desc    Update product
- * @route   PUT /api/products/:id
- * @access  Private (Admin only)
- */
 const updateProduct = async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -238,7 +187,6 @@ const updateProduct = async (req, res) => {
       });
     }
 
-    // Update fields
     Object.keys(req.body).forEach(key => {
       if (req.body[key] !== undefined) {
         product[key] = req.body[key];
@@ -256,8 +204,6 @@ const updateProduct = async (req, res) => {
       data: { product }
     });
   } catch (error) {
-    console.error('Update product error:', error);
-    
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -274,11 +220,6 @@ const updateProduct = async (req, res) => {
   }
 };
 
-/**
- * @desc    Delete product (soft delete)
- * @route   DELETE /api/products/:id
- * @access  Private (Admin only)
- */
 const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findOne({
@@ -293,7 +234,6 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // Soft delete
     product.isActive = false;
     if (req.user?.id) {
       product.updatedBy = req.user.id;
@@ -305,7 +245,6 @@ const deleteProduct = async (req, res) => {
       message: 'Product deleted successfully'
     });
   } catch (error) {
-    console.error('Delete product error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while deleting product'
@@ -313,11 +252,6 @@ const deleteProduct = async (req, res) => {
   }
 };
 
-/**
- * @desc    Toggle product stock status
- * @route   PATCH /api/products/:id/stock
- * @access  Private (Admin only)
- */
 const toggleProductStock = async (req, res) => {
   try {
     const { inStock } = req.body;
@@ -346,7 +280,6 @@ const toggleProductStock = async (req, res) => {
       data: { product }
     });
   } catch (error) {
-    console.error('Toggle stock error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while updating stock status'
@@ -354,21 +287,14 @@ const toggleProductStock = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get product categories
- * @route   GET /api/products/categories
- * @access  Public
- */
 const getCategories = async (req, res) => {
   try {
     const categories = await Product.distinct('category', { isActive: true });
-    
     res.status(200).json({
       success: true,
       data: categories.sort()
     });
   } catch (error) {
-    console.error('Get categories error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching categories'
@@ -376,21 +302,14 @@ const getCategories = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get product brands
- * @route   GET /api/products/brands
- * @access  Public
- */
 const getBrands = async (req, res) => {
   try {
     const brands = await Product.distinct('brand', { isActive: true });
-    
     res.status(200).json({
       success: true,
       data: brands.sort()
     });
   } catch (error) {
-    console.error('Get brands error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching brands'
@@ -398,16 +317,17 @@ const getBrands = async (req, res) => {
   }
 };
 
-/**
- * @desc    Get featured products
- * @route   GET /api/products/featured
- * @access  Public
- */
 const getFeaturedProducts = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
     
-    const products = await Product.getFeatured(Number(limit));
+    const products = await Product.find({ 
+      isActive: true, 
+      isFeatured: true,
+      inStock: true 
+    })
+    .sort({ rating: -1, createdAt: -1 })
+    .limit(Number(limit));
     
     res.status(200).json({
       success: true,
@@ -415,7 +335,6 @@ const getFeaturedProducts = async (req, res) => {
       data: { products }
     });
   } catch (error) {
-    console.error('Get featured products error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while fetching featured products'
@@ -423,11 +342,6 @@ const getFeaturedProducts = async (req, res) => {
   }
 };
 
-/**
- * @desc    Update product inventory
- * @route   PATCH /api/products/:id/inventory
- * @access  Private (Admin only)
- */
 const updateInventory = async (req, res) => {
   try {
     const { quantity, operation = 'set' } = req.body;
@@ -445,14 +359,15 @@ const updateInventory = async (req, res) => {
     }
 
     if (operation === 'add') {
-      await product.updateStock(quantity);
+      product.inventoryCount = (product.inventoryCount || 0) + quantity;
     } else if (operation === 'subtract') {
-      await product.updateStock(-quantity);
+      product.inventoryCount = Math.max(0, (product.inventoryCount || 0) - quantity);
     } else {
       product.inventoryCount = quantity;
-      product.inStock = quantity > 0;
-      await product.save();
     }
+    
+    product.inStock = product.inventoryCount > 0;
+    await product.save();
 
     res.status(200).json({
       success: true,
@@ -460,7 +375,6 @@ const updateInventory = async (req, res) => {
       data: { product }
     });
   } catch (error) {
-    console.error('Update inventory error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error while updating inventory'

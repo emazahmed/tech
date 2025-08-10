@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   View, 
   FlatList, 
@@ -51,10 +51,21 @@ export default function ProductList({
     enableCache: true,
   });
 
+  // Create a stable reference for filters to avoid unnecessary re-renders
+  const memoizedFilters = useMemo(() => filters, [
+    filters.search,
+    filters.category,
+    filters.minPrice,
+    filters.maxPrice,
+    filters.sortBy,
+    filters.sortOrder,
+    // Add other filter properties that you use
+  ]);
+
   // Update filters when props change
   useEffect(() => {
-    filterProducts(filters);
-  }, [JSON.stringify(filters)]);
+    filterProducts(memoizedFilters);
+  }, [memoizedFilters, filterProducts]);
 
   const handleRefresh = async () => {
     clearError();
@@ -125,7 +136,10 @@ export default function ProductList({
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyTitle}>No products found</Text>
       <Text style={styles.emptySubtitle}>
-        Try adjusting your search or filters
+        {filters.search 
+          ? `No results found for "${filters.search}"`
+          : "Try adjusting your search or filters"
+        }
       </Text>
       <Button
         title="Refresh"
@@ -139,7 +153,9 @@ export default function ProductList({
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2563EB" />
-        <Text style={styles.loadingText}>Loading products...</Text>
+        <Text style={styles.loadingText}>
+          {filters.search ? `Searching for "${filters.search}"...` : 'Loading products...'}
+        </Text>
       </View>
     );
   }
@@ -313,5 +329,17 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     marginBottom: 24,
+  },
+  debugContainer: {
+    backgroundColor: '#F3F4F6',
+    padding: 8,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderRadius: 4,
+  },
+  debugText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
   },
 });

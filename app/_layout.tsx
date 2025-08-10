@@ -51,14 +51,14 @@ export default function RootLayout() {
     
     console.warn = (...args) => {
       if (args[0]?.includes?.('POP_TO_TOP')) {
-        return; // Suppress this specific warning
+        return;
       }
       originalWarn(...args);
     };
     
     console.error = (...args) => {
       if (args[0]?.includes?.('POP_TO_TOP')) {
-        return; // Suppress this specific error
+        return;
       }
       originalError(...args);
     };
